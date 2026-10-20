@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  e2e:
+    name: E2E Serenity Screenplay
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: Levantar la API desde su imagen publicada
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker run -d --name api -p 8080:8080 ghcr.io/nataliagarciab/rtbc-orders-api:1.0.0
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:8080/actuator/health && exit 0
+            sleep 2
+          done
+          docker logs api
+          exit 1
+
+      - name: Ejecutar los escenarios
+        run: ./mvnw -B -ntp verify
+
+      - name: Publicar el reporte de Serenity
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: reporte-serenity
+          path: target/site/serenity
